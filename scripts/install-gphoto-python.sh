@@ -88,6 +88,42 @@ function clean_service() {
     fi
 }
 
+function create_ffmpeg_webcam_service() {
+    info "### Create Service for running CameraControl Daemon..."
+    cat >/etc/systemd/system/ffmpeg-webcam.service <<EOF
+[Unit]
+Description=ffmpeg webcam service
+
+[Service]
+Type=simple
+RemainAfterExit=no
+ExecStart=/usr/bin/python3 /var/www/html/api/cameracontrol.py --forceRecreateCam
+ExecStop=/var/www/html/api/cameracontrol.py --exit
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable ffmpeg-webcam.service
+    systemctl start ffmpeg-webcam.service
+}
+
+function persist_webcam() {
+    info "### Persists Webcam to survive reboot..."
+    info "    You can use a cronjob or a systemd service to recreate/restart Webcam after reboot."
+    info "    Using the Service might be more robust, it runs as root and reloads the kernel modules on start."
+    echo "Your choices are:"
+    echo "1 create a cronjob"
+    echo "2 create a service"
+    ask_yes_no "Please enter your choice" "1"
+    info ""
+    if [[ $REPLY =~ ^[1]$ ]]; then
+        add_cronjob
+    elif [[ $REPLY =~ ^[2]$ ]]; then
+        create_ffmpeg_webcam_service
+    fi
+}
+
 info "This script installs some dependencies and simplifies the setup for using gphoto2 as webcam."
 info "It installs required dependencies and sets up a virtual webcam that gphoto2 can stream video to."
 info "It can remove the gphoto2 webcam setup, as well."
@@ -95,8 +131,9 @@ info ""
 echo "Your options are:"
 echo "1 Install gphoto2 webcam"
 echo "2 Remove gphoto2 webcam"
-echo "3 Migrate from systemd service to modprobe config"
-echo "4 Nothing"
+echo "3 Migrate from systemd service to modprobe/cronjob config"
+echo "4 Migrate from cronjob service to modprobe/systemd config"
+echo "5 Nothing"
 info ""
 ask_yes_no "Please enter your choice" "3"
 info ""
@@ -136,7 +173,7 @@ EOF
         info "    Take picture command: python3 cameracontrol.py --capture-image-and-download %s"
         info ""
         info "### Trying to create needed cronjob ..."
-        add_cronjob
+        persist_webcam
         exit 0
     fi
 elif [[ $REPLY =~ ^[2]$ ]]; then
@@ -152,6 +189,12 @@ elif [[ $REPLY =~ ^[3]$ ]]; then
     clean_service
     info "### Trying to create needed cronjob ..."
     add_cronjob
+elif [[ $REPLY =~ ^[4]$ ]]; then
+    info "### Migrating to modprobe config"
+    gphoto_preview
+    remove_cronjob
+    info "### Trying to create needed service ..."
+    create_ffmpeg_webcam_service
 else
     info "### Okay... doing nothing!"
 fi
